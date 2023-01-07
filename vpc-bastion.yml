@@ -1,0 +1,831 @@
+Description:  This template deploys a VPC, with a pair of public and private subnets spread
+  across two Availability Zones. It deploys an internet gateway, with a default
+  route on the public subnets. It deploys a pair of NAT gateways (one in each AZ),
+  and default routes for them in the private subnets.
+
+Parameters:
+
+  # Hosted Zone
+
+  pDomainName:
+    Description: Domain Name
+    Type: String
+
+  # VPC/Subnets CIDR ranges
+
+  pVpcCIDR:
+    Description: IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.192.0.0/16
+
+  pPublicSubnet1CIDR:
+    Description: IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.10.0/24
+
+  pPublicSubnet2CIDR:
+    Description: IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.11.0/24
+
+  pPrivateSubnet1CIDR:
+    Description: IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.20.0/24
+
+  pPrivateSubnet2CIDR:
+    Description: IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.21.0/24
+
+  # NAT
+
+  pCreateNATGateways:
+    Description: true creates NAT Gateways for the private subnets
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+  
+  # Bastion
+
+  pBastionInstance:
+    Description: true creates a bastion in the VPC. If NAT gateways are not created, bastion will be used as NAT gateway. 
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  
+  pBastionInstanceInstanceAMI:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Description: Required. Ensure AMI is specific to the region
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+  pBastionInstanceType:
+    Type: String
+    Description: Instance Family and size
+    Default: t3.small
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge 
+  
+  pBastionCIDR:
+    Type: String
+    Description: Allow SSH traffic from this CIDR range
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid CIDR range of the form x.x.x.x/x.
+
+  pBastionInstanceKeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+
+  # Tagging
+  
+  pEnvironmentTag:
+    Type: String
+    Description: Environment for default resource tagging
+    Default: production
+    AllowedValues:
+      - production
+      - staging
+      - sandbox
+      - test
+      - development
+      - qa
+
+  pWorkloadTag:
+    Type: String
+    Description: Worload tag
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterLabels:
+      pDomainName:
+        default: Domain Name
+      pVpcCIDR:
+        default: VPC CIDR
+      pPublicSubnet1CIDR:
+        default: Public Subnet 1 CIDR
+      pPublicSubnet2CIDR:
+        default: Public Subnet 2 CIDR
+      pPrivateSubnet1CIDR:
+        default: Private Subnet 1 CIDR
+      pPrivateSubnet2CIDR:
+        default: Private Subnet 2 CIDR
+      pCreateNATGateways:
+        default: Create NAT Gateways?
+      pBastionInstance:
+        default: Create Bastion Condition
+      pBastionInstanceInstanceAMI:
+        default: Instance AMI
+      pBastionInstanceType:
+        default: Instance Type
+      pBastionCIDR:
+        default: Inbound CIDR
+      pBastionInstanceKeyPair:
+        default: Key Pair
+      pEnvironmentTag:
+        default: Environment Tag
+      pWorkloadTag:
+        default: Workload Tag
+
+    ParameterGroups:
+      - Label:
+          default: Hosted Zones Settings
+        Parameters:
+            - pDomainName
+      - Label:
+          default: VPC CIDR Range
+        Parameters:
+            - pVpcCIDR
+      - Label:
+          default: Public Subnets CIDR Ranges
+        Parameters:
+            - pPublicSubnet1CIDR
+            - pPublicSubnet2CIDR
+      - Label:
+          default: Private Subnets CIDR Ranges
+        Parameters:
+            - pPrivateSubnet1CIDR
+            - pPrivateSubnet2CIDR
+      - Label:
+          default: NAT Gateways
+        Parameters:
+            - pCreateNATGateways
+      - Label:
+          default: Bastion
+        Parameters:
+            - pBastionInstance
+            - pBastionInstanceInstanceAMI
+            - pBastionInstanceType
+            - pBastionCIDR
+            - pBastionInstanceKeyPair
+      - Label:
+          default: Tagging
+        Parameters:
+            - pEnvironmentTag
+            - pWorkloadTag
+
+Conditions:
+  CondCreateNATGateways: !Equals [true, !Ref pCreateNATGateways]
+  CondCreateBastion: !Equals [true, !Ref pBastionInstance] 
+  CondUseBastionAsNat: !And [ !Condition CondCreateBastion, !Equals [false, !Ref pCreateNATGateways] ]
+  CondCreateInternetRoute: !Or [ !Condition CondUseBastionAsNat, !Condition CondCreateNATGateways ]
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref pVpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub igw-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref pPublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-public-subnet-1
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref pPublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-public-subnet-2
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref pPrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-subnet-1
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref pPrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-subnet-2
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  NATGateway1EIP:
+    Type: AWS::EC2::EIP
+    Condition: CondCreateNATGateways
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub nat-gateway-1-epi-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  NATGateway2EIP:
+    Type: AWS::EC2::EIP
+    Condition: CondCreateNATGateways
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub nat-gateway-2-epi-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  NATGateway1:
+    Type: AWS::EC2::NatGateway
+    Condition: CondCreateNATGateways
+    Properties:
+      AllocationId: !GetAtt NATGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub nat-gateway-1-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  NATGateway2:
+    Type: AWS::EC2::NatGateway
+    Condition: CondCreateNATGateways
+    Properties:
+      AllocationId: !GetAtt NATGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub nat-gateway-2-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub public-routes-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub private-routes-1-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Condition: CondCreateInternetRoute
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [ CondCreateNATGateways, !Ref NATGateway1, !Ref AWS::NoValue ]
+      NetworkInterfaceId: !If [ CondUseBastionAsNat, !Ref BastionEni, !Ref AWS::NoValue ]
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub private-routes-2-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Condition: CondCreateInternetRoute
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [ CondCreateNATGateways, !Ref NATGateway2, !Ref AWS::NoValue ]
+      NetworkInterfaceId: !If [ CondUseBastionAsNat, !Ref BastionEni, !Ref AWS::NoValue ]
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+  BastionElasticIp: 
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub bastion-elastic-ip-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+  
+  BastionEni:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      Description: Bastion eth0
+      SourceDestCheck: false
+      SubnetId: !Ref PublicSubnet1
+      GroupSet: 
+        - !GetAtt BastionSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-bastion-eni
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  BastionEniEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt BastionElasticIp.AllocationId
+      NetworkInterfaceId: !Ref BastionEni
+
+  PmmServerPasswordSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}-pmm-password
+      Description: PMM server password.
+      GenerateSecretString:
+        PasswordLength: 50
+        ExcludePunctuation: true
+      KmsKeyId: 
+        Fn::ImportValue: !Sub secretsmanagerKeyId-${AWS::Region}
+      Tags: 
+        - Key: Name
+          Value: !Sub pmmServer-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  BastionInstance:
+    Condition: CondCreateBastion
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !Ref BastionInstanceProfile
+      ImageId: !Ref pBastionInstanceInstanceAMI
+      InstanceType: !Ref pBastionInstanceType
+      KeyName: !Ref pBastionInstanceKeyPair
+      SubnetId: !If [ CondUseBastionAsNat, !Ref AWS::NoValue, !Ref PublicSubnet1 ]
+      SecurityGroupIds: !If
+        - CondUseBastionAsNat
+        - !Ref AWS::NoValue
+        - 
+          - !GetAtt BastionSecurityGroup.GroupId
+      
+      NetworkInterfaces:
+        Fn::If:
+        - CondUseBastionAsNat
+        - 
+          - NetworkInterfaceId: !Ref BastionEni
+            DeviceIndex: 0
+        - !Ref AWS::NoValue
+      UserData:
+        Fn::Base64: !Join
+          - "\n"
+          - 
+            - !Sub |
+              #!/bin/sh
+              sudo yum update -y 
+              sudo yum install docker -y
+              sudo yum install jq -y
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              docker create --volume /srv --name pmm-data percona/pmm-server:2 /bin/true
+              sudo docker run --detach --restart always \
+                  -p 80:80 \
+                  -p 443:443 \
+                  --volumes-from pmm-data \
+                  --name pmm-server \
+                  percona/pmm-server:2
+              PMM_SERVER_PASSWORD=$(AWS_DEFAULT_REGION=${AWS::Region} aws secretsmanager get-secret-value --secret-id ${PmmServerPasswordSecret} | jq --raw-output '.SecretString')
+              docker exec -t pmm-server change-admin-password ${!PMM_SERVER_PASSWORD}
+              
+            - !If
+              - CondUseBastionAsNat
+              - !Sub |
+                # enable IP forwarding and NAT
+                sudo su
+                sudo sysctl -w net.ipv4.ip_forward=1
+                sudo sysctl -w net.ipv4.conf.eth0.send_redirects=0
+                echo "net.ipv4.ip_forward=1" >> /etc/sysctl.d/100-custom.conf
+                echo "net.ipv4.conf.eth0.send_redirects=0" >> /etc/sysctl.d/100-custom.conf
+                sudo /sbin/iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+                sudo yum install -y iptables-services
+                sudo systemctl start iptables
+                sudo systemctl enable iptables
+                iptables -D INPUT $(iptables -L INPUT --line-numbers | grep icmp-host-prohibited | awk '{print $1}')
+                iptables -D FORWARD $(iptables -L FORWARD --line-numbers | grep icmp-host-prohibited | awk '{print $1}')
+                sudo service iptables save
+              - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-bastion
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  # Security Group
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupName: !Sub SG-${AWS::StackName}-bastion
+      GroupDescription: !Sub ${AWS::StackName} Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH ingress
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS
+        - IpProtocol: "-1"
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref pVpcCIDR
+          Description: Internal traffic
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: all
+      Tags:
+        - Key: Name
+          Value: !Sub SG-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  BastionNatSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CondUseBastionAsNat
+    Properties:
+      VpcId: !Ref VPC
+      GroupName: !Sub SG-${AWS::StackName}-bastion-nat
+      GroupDescription: !Sub ${AWS::StackName} Security Group
+      SecurityGroupIngress:
+        - IpProtocol: "-1"
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref pVpcCIDR
+          Description: All traffic from VPC
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: all
+      Tags:
+        - Key: Name
+          Value: !Sub SG-${AWS::StackName}
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  # IAM Role
+
+  BastionIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies: 
+        - PolicyName: !Sub ${AWS::StackName}-instance-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: volumesManagement
+                Effect: Allow
+                Action:
+                  - "secretsmanager:GetRandomPassword"
+                  - "secretsmanager:GetResourcePolicy"
+                  - "secretsmanager:GetSecretValue"
+                  - "secretsmanager:DescribeSecret"
+                  - "secretsmanager:ListSecretVersionIds"
+                Resource: !Ref PmmServerPasswordSecret
+          PolicyName: secretsManagerReadOnly
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      RoleName: !Sub ${AWS::StackName}-bastion-role
+
+  # Instance Profile
+
+  BastionInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref BastionIamRole
+      InstanceProfileName: !Sub ${AWS::StackName}-bastion-instance-profile
+
+  # Hosted Zone
+
+  PrivateZone:
+    Type: AWS::Route53::HostedZone
+    Properties: 
+      Name: !Ref pDomainName
+      VPCs: 
+        - VPCId: !Ref VPC
+          VPCRegion: !Ref AWS::Region
+      HostedZoneTags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  PublicZone:
+    Type: AWS::Route53::HostedZone
+    Properties: 
+      Name: !Ref pDomainName
+      HostedZoneTags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironmentTag
+        - Key: workload
+          Value: !Ref pWorkloadTag
+
+  PrivateRecord:
+    Condition: CondCreateBastion
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      HostedZoneId: !Ref PrivateZone
+      Name: !Sub bastion.${pDomainName}
+      ResourceRecords: 
+        - !GetAtt BastionEni.PrimaryPrivateIpAddress
+      TTL: 300
+      Type: A
+
+  PublicRecord:
+    Condition: CondCreateBastion
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      HostedZoneId: !Ref PublicZone
+      Name: !Sub bastion.${pDomainName}
+      ResourceRecords: 
+        - !Ref BastionElasticIp
+      TTL: 300
+      Type: A
+
+  # Backup
+  
+  BackupVault:
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: !Sub ${AWS::StackName}-bastion
+
+  BackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub ${AWS::StackName}
+        BackupPlanRule:
+          - RuleName: RuleForDailyBackups
+            TargetBackupVault: !Ref BackupVault
+            ScheduleExpression: cron(0 5 ? * * *)
+            Lifecycle:
+              DeleteAfterDays: 7
+      BackupPlanTags:
+        controlled-by: !Sub cloudformation-${AWS::StackName}
+        environment: !Ref pEnvironmentTag
+        workload: !Ref pWorkloadTag
+
+  BackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupSelection:
+        SelectionName: !Sub ${AWS::StackName}-volume-selection
+        IamRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/BackupServiceRole
+        Resources:
+          - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${BastionInstance}
+      BackupPlanId: !Ref BackupPlan
+
+Outputs:
+  VPC:
+    Description: A reference to the created VPC
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${AWS::StackName}-vpcId
+
+  VPCCidrBlock:
+    Description: VPC's CidrBlock
+    Value: !GetAtt VPC.CidrBlock
+    Export:
+      Name: !Sub ${AWS::StackName}-vpcCidrBlock
+
+  PublicSubnets:
+    Description: A list of the public subnets
+    Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ]]
+
+  PrivateSubnets:
+    Description: A list of the private subnets
+    Value: !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]]
+
+  PublicSubnet1:
+    Description: A reference to the public subnet in the 1st Availability Zone
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub ${AWS::StackName}-publicSubnet01
+
+  PublicSubnet2:
+    Description: A reference to the public subnet in the 2nd Availability Zone
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub ${AWS::StackName}-publicSubnet02
+
+  PrivateSubnet1:
+    Description: A reference to the private subnet in the 1st Availability Zone
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub ${AWS::StackName}-privateSubnet01
+
+  PrivateSubnet2:
+    Description: A reference to the private subnet in the 2nd Availability Zone
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub ${AWS::StackName}-privateSubnet02
+
+  BastionPublicIp:
+    Condition: CondCreateBastion
+    Description: Bastion Public IP
+    Value: !Sub http://${BastionInstance.PublicIp}
+    Export:
+      Name: !Sub ${AWS::StackName}-BastionPublicIp

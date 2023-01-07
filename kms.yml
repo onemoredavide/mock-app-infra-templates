@@ -1,0 +1,748 @@
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: KMS keys used to encrypt different service resources. Default AWS keys cannot be shared while customer managed keys deployed via this stack can be shared via KMS key policies
+
+Parameters:
+
+  pCrossAccountKeys:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+  
+  pCrossAccountRoles:
+    Type: CommaDelimitedList
+    Description: >-
+      Comma separated list of ARN's for cross account access roles.
+      KMS Keys will these roles as Principal.
+  pCreateKmsEbsKey:
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+
+  pCreateKmsRdsKey:
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  
+  pCreateKmsEfsKey:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+  
+  pCreateKmsFsxKey:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+  
+  pCreateKmsS3Key:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+  pAdditionalSsmPrincipals:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+  pSsmPrincipals:
+    Type: CommaDelimitedList
+    Description: >-
+      Comma separated list of IAM role ARNs.
+      The SSM KMS Key will have these additional roles as AWS Principal.
+  pCreateKmsSsmKey:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+  pAdditionalDynamoPrincipals:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+  
+  pDynamoPrincipals:
+    Type: CommaDelimitedList
+    Description: >-
+      Comma separated list of IAM role ARNs.
+      The DynamoDB KMS Key will have these additional roles as AWS Principal.
+  pCreateKmsDynamoKey:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+  pAdditionalEcPrincipals:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+  pEcPrincipals:
+    Type: CommaDelimitedList
+    Description: >-
+      Comma separated list of IAM role ARNs.
+      The ElastiCache KMS Key will have these additional roles as AWS Principal.
+  
+  pCreateKmsEcKey:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+  pCreateKmsSMKey:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterLabels:
+      pCrossAccountKeys:
+        default: Create each KMS Key using Cross Account Roles
+      pCrossAccountRoles:
+        default: Cross Account Roles
+      pCreateKmsEbsKey:
+        default: Create KMS EBS Key
+      pCreateKmsRdsKey:
+        default: Create KMS RDS Key
+      pCreateKmsEfsKey:
+        default: Create KMS EFS Key
+      pCreateKmsFsxKey:
+        default: Create KMS FSX Key
+      pCreateKmsS3Key:
+        default: Create KMS S3 Key
+      pCreateKmsDynamoKey:
+        default: Create KMS DynamoDB Key
+      pAdditionalDynamoPrincipals:
+        default: Additional DynamoDB Principals
+      pDynamoPrincipals:
+        default: DynamoDB IAM Principals
+      pCreateKmsEcKey:
+        default: Create KMS Elasticache Key
+      pCreateKmsSMKey:
+        default: Create KMS Secrets Manager Key
+      pAdditionalSsmPrincipals:
+        default: Additional SSM Principals
+      pSsmPrincipals:
+        default: SSM IAM Principals
+      pCreateKmsSsmKey:
+        default: Create KMS SSM Key
+      pAdditionalEcPrincipals:
+        default: Additional ElastiCache Principals
+      pEcPrincipals:
+        default: ElastiCache IAM Principals
+
+    ParameterGroups:
+      - Label:
+          default: Cross Account Settings
+        Parameters:
+          - pCrossAccountKeys
+          - pCrossAccountRoles
+      - Label:
+          default: KMS SSM Settings
+        Parameters:
+          - pAdditionalSsmPrincipals
+          - pSsmPrincipals
+          - pCreateKmsSsmKey
+      - Label:
+          default: KMS ElastiCache Settings
+        Parameters:
+          - pAdditionalEcPrincipals
+          - pEcPrincipals
+          - pCreateKmsEcKey
+      - Label:
+          default: KMS DynamoDB Settings
+        Parameters:
+          - pAdditionalDynamoPrincipals
+          - pDynamoPrincipals
+          - pCreateKmsDynamoKey
+      - Label:
+          default: KMS Other Keys Settings
+        Parameters:
+          - pCreateKmsEbsKey
+          - pCreateKmsRdsKey
+          - pCreateKmsEfsKey
+          - pCreateKmsFsxKey
+          - pCreateKmsS3Key
+          - pCreateKmsDynamoKey
+          - pCreateKmsSMKey
+    
+Conditions:
+
+  CondCrossAccountKeys: !Equals [true, !Ref pCrossAccountKeys]
+  CondCreateKmsEbsKey: !Equals [true, !Ref pCreateKmsEbsKey]
+  CondCreateKmsRdsKey: !Equals [true, !Ref pCreateKmsRdsKey]
+  CondCreateKmsEfsKey: !Equals [true, !Ref pCreateKmsEfsKey]
+  CondCreateKmsFsxKey: !Equals [true, !Ref pCreateKmsFsxKey]
+  CondCreateKmsS3Key: !Equals [true, !Ref pCreateKmsS3Key]
+  CondCreateKmsSsmKey: !Equals [true, !Ref pCreateKmsSsmKey]
+  CondCreateKmsDynamoKey: !Equals [true, !Ref pCreateKmsDynamoKey]
+  CondAdditionalDynamoPrincipals: !Equals [true, !Ref pAdditionalDynamoPrincipals]
+  CondAdditionalSsmPrincipals: !Equals [true, !Ref pAdditionalSsmPrincipals]
+  CondAdditionalEcPrincipals: !Equals [true, !Ref pAdditionalEcPrincipals]
+  CondCreateKmsEcKey: !Equals [true, !Ref pCreateKmsEcKey]
+  CondCreateKmsSMKey: !Equals [true, !Ref pCreateKmsSMKey]
+
+Resources:
+  #
+  # Account-wide EBS encryption is enforced manually. Once supported by CloudFormation, make sure to add the resource block here. 
+  #
+
+  # EBS KMS Key
+
+  ebsKms:
+    Type: AWS::KMS::Key
+    Condition: CondCreateKmsEbsKey
+    Properties:
+      Enabled: true
+      EnableKeyRotation: true
+      Description: KMS Key for EBS volumes encryption
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub ebs-${AWS::AccountId}-${AWS::Region}
+        Statement:
+          - 
+            Sid: IAM Key Control
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"]
+          - 
+            Sid: Auto Scaling Role Permissions
+            Effect: Allow
+            Action: 
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey
+              - kms:GenerateDataKeyWithoutPlaintext
+              - kms:DescribeKey
+            Resource: "*"
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling
+          - 
+            Sid: Persistent Resources Permissions
+            Effect: Allow
+            Action: kms:CreateGrant
+            Resource: "*"
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling
+            Condition:
+              Bool:
+                kms:GrantIsForAWSResource: true     
+      Tags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+
+  ebsKmsAlias:
+    Type: AWS::KMS::Alias
+    Condition: CondCreateKmsEbsKey
+    Properties:
+      TargetKeyId: !Ref ebsKms
+      AliasName: !Sub alias/ebs/${AWS::Region}
+      
+  # RDS KMS Key
+
+  rdsKms:
+    Type: AWS::KMS::Key
+    Condition: CondCreateKmsRdsKey
+    Properties:
+      Enabled: true
+      EnableKeyRotation: true
+      Description: KMS Key for RDS encryption
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub rds-${AWS::AccountId}-${AWS::Region}
+        Statement:
+          - 
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"]
+            Sid: IAM Key Control
+      Tags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+
+  rdsKmsAlias:
+    Type: AWS::KMS::Alias
+    Condition: CondCreateKmsRdsKey
+    Properties:
+      TargetKeyId: !Ref rdsKms
+      AliasName: !Sub alias/rds/${AWS::Region}
+  
+  # EFS KMS Key
+
+  efsKms:
+    Type: AWS::KMS::Key
+    Condition: CondCreateKmsEfsKey
+    Properties:
+      Enabled: true
+      EnableKeyRotation: true
+      Description: KMS Key for EFS encryption
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub efs-${AWS::AccountId}-${AWS::Region}
+        Statement:
+          - 
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"]
+            Sid: IAM Key Control   
+      Tags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+
+  efsKmsAlias:
+    Type: AWS::KMS::Alias
+    Condition: CondCreateKmsEfsKey
+    Properties:
+      TargetKeyId: !Ref efsKms
+      AliasName: !Sub alias/efs/${AWS::Region}
+  
+  # FSX KMS Key
+
+  fsxKms:
+    Type: AWS::KMS::Key
+    Condition: CondCreateKmsFsxKey
+    Properties:
+      Enabled: true
+      EnableKeyRotation: true
+      Description: KMS Key for FSX encryption
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub fsx-${AWS::AccountId}-${AWS::Region}
+        Statement:
+          - 
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"]
+            Sid: IAM Key Control   
+      Tags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+
+  fsxKmsAlias:
+    Type: AWS::KMS::Alias
+    Condition: CondCreateKmsFsxKey
+    Properties:
+      TargetKeyId: !Ref fsxKms
+      AliasName: !Sub alias/fsx/${AWS::Region}
+  
+  # Dynamo KMS Key
+
+  dynamoKms:
+    Type: AWS::KMS::Key
+    Condition: CondCreateKmsDynamoKey
+    Properties:
+      Enabled: true
+      EnableKeyRotation: true
+      Description: KMS Key for DynamoDB encryption
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub s3-${AWS::AccountId}-${AWS::Region}
+        Statement:
+          - 
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"]
+            Sid: IAM Key Control 
+          - !If
+            - CondAdditionalDynamoPrincipals
+            - 
+              Sid: PrincipalsKeyAccess
+              Effect: Allow
+              Principal:
+                AWS: !Ref pDynamoPrincipals
+              Action:
+                - 'kms:Encrypt'
+                - 'kms:Decrypt'
+                - 'kms:ReEncrypt*'
+                - 'kms:GenerateDataKey*'
+                - 'kms:DescribeKey'
+              Resource: '*'
+            - !Ref "AWS::NoValue"
+      Tags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+
+  dynamoKmsAlias:
+    Type: AWS::KMS::Alias
+    Condition: CondCreateKmsDynamoKey
+    Properties:
+      TargetKeyId: !Ref dynamoKms
+      AliasName: !Sub alias/dynamo/${AWS::Region}
+      
+    # S3 KMS Key
+
+  s3Kms:
+    Type: AWS::KMS::Key
+    Condition: CondCreateKmsS3Key
+    Properties:
+      Enabled: true
+      EnableKeyRotation: true
+      Description: KMS Key for S3 encryption
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub s3-${AWS::AccountId}-${AWS::Region}
+        Statement:
+          - 
+            Sid: IAM Key Control
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"]
+          - 
+            Sid: CodePipeline
+            Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action:
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+            Resource: '*'
+          - Sid: >-
+              Allow access through Amazon S3 for all principals in the account that are
+              authorized to use Amazon S3
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:CallerAccount: !Ref "AWS::AccountId"
+                kms:ViaService: !Sub s3.${AWS::Region}.amazonaws.com
+      Tags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+
+  s3KmsAlias:
+    Type: AWS::KMS::Alias
+    Condition: CondCreateKmsS3Key
+    Properties:
+      TargetKeyId: !Ref s3Kms
+      AliasName: !Sub alias/s3/${AWS::Region}
+  
+  # SSM KMS Key
+
+  ssmKms:
+    Type: AWS::KMS::Key
+    Condition: CondCreateKmsSsmKey
+    Properties:
+      Enabled: true
+      EnableKeyRotation: true
+      Description: KMS Key for SSM encryption including Parameter Store
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub ssm-${AWS::AccountId}-${AWS::Region}
+        Statement:
+          - 
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"]
+            Sid: IAM Key Control
+          - !If
+            - CondAdditionalSsmPrincipals
+            - 
+              Sid: PrincipalsKeyAccess
+              Effect: Allow
+              Principal:
+                AWS: !Ref pSsmPrincipals
+              Action:
+                - 'kms:Encrypt'
+                - 'kms:Decrypt'
+                - 'kms:ReEncrypt*'
+                - 'kms:GenerateDataKey*'
+                - 'kms:DescribeKey'
+              Resource: '*'
+            - !Ref "AWS::NoValue"
+      Tags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+
+  ssmKmsAlias:
+    Type: AWS::KMS::Alias
+    Condition: CondCreateKmsSsmKey
+    Properties:
+      TargetKeyId: !Ref ssmKms
+      AliasName: !Sub alias/ssm/${AWS::Region}
+
+  # Elasticache KMS Key
+
+  ecKms:
+    Type: AWS::KMS::Key
+    Condition: CondCreateKmsEcKey
+    Properties:
+      Enabled: true
+      EnableKeyRotation: true
+      Description: KMS Key for Elasticache cluster encryption
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub elasticache-${AWS::AccountId}-${AWS::Region}
+        Statement:
+          - 
+            Sid: IAM Key Control
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"] 
+          - !If
+            - CondAdditionalEcPrincipals
+            - 
+              Sid: ElastiCacheEncryptDecrypt
+              Effect: Allow
+              Principal:
+                AWS: !Ref pEcPrincipals
+              Action:
+                - 'kms:Encrypt'
+                - 'kms:Decrypt'
+                - 'kms:ReEncrypt*'
+                - 'kms:GenerateDataKey*'
+                - 'kms:DescribeKey'
+              Resource: '*'
+              Condition:
+                StringEquals:
+                  kms:ViaService:
+                    - !Sub elasticache.${AWS::Region}.amazonaws.com
+                    - !Sub dax.${AWS::Region}.amazonaws.com
+            - !Ref AWS::NoValue
+      Tags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+
+  ecKmsAlias:
+    Type: AWS::KMS::Alias
+    Condition: CondCreateKmsEcKey
+    Properties:
+      TargetKeyId: !Ref ecKms
+      AliasName: !Sub alias/elasticache/${AWS::Region}
+
+# Secrets Manager KMS Key
+
+  smKms:
+    Type: AWS::KMS::Key
+    Condition: CondCreateKmsSMKey
+    Properties:
+      Enabled: true
+      EnableKeyRotation: true
+      Description: KMS Key for Secrets Manager secrets encryption
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub ebs-${AWS::AccountId}-${AWS::Region}
+        Statement:
+          - 
+            Sid: IAM Key Control
+            Effect: Allow
+            Action: kms:*
+            Resource: "*"
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"]
+          - 
+            Sid: Allow access to principals authorized to use AWS Secrets Manager
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - kms:CreateGrant
+              - kms:DescribeKey
+            Resource: "*"
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub secretsmanager.${AWS::Region}.amazonaws.com
+                kms:CallerAccount: !Sub ${AWS::AccountId}
+          - 
+            Sid: Allow direct access to key metadata to the account
+            Effect: Allow
+            Principal:
+              AWS: !If [CondCrossAccountKeys, !Ref pCrossAccountRoles, !Sub "arn:aws:iam::${AWS::AccountId}:root"]
+            Action:
+              - "kms:Describe*"
+              - "kms:Get*"
+              - "kms:List*"
+              - kms:RevokeGrant
+            Resource: "*"
+      Tags:
+        - Key: controlled-by
+          Value: !Sub cloudformation-${AWS::StackName}
+
+  smKmsAlias:
+    Type: AWS::KMS::Alias
+    Condition: CondCreateKmsSMKey
+    Properties:
+      TargetKeyId: !Ref smKms
+      AliasName: !Sub alias/sm/${AWS::Region}
+
+Outputs:
+
+  keyEbsARN:
+    Description: KMS EBS key ARN
+    Condition: CondCreateKmsEbsKey
+    Value: !GetAtt ebsKms.Arn
+    Export:
+      Name: !Sub ebsKeyArn-${AWS::Region}
+
+  keyEbsId:
+    Description: KMS EBS key Id
+    Condition: CondCreateKmsEbsKey
+    Value: !Ref ebsKms
+    Export:
+      Name: !Sub ebsKeyId-${AWS::Region}
+
+  keyRdsARN:
+    Description: RDS key ARN
+    Condition: CondCreateKmsRdsKey
+    Value: !GetAtt rdsKms.Arn
+    Export:
+      Name: !Sub rdsKeyArn-${AWS::Region}
+
+  keyRdsId:
+    Description: RDS key Id
+    Condition: CondCreateKmsRdsKey
+    Value: !Ref rdsKms
+    Export:
+      Name: !Sub rdsKeyId-${AWS::Region}
+  
+  keyEfs:
+    Description: EFS key ARN
+    Condition: CondCreateKmsEfsKey
+    Value: !GetAtt efsKms.Arn
+    Export:
+      Name: !Sub efsKeyArn-${AWS::Region}
+  
+  keyEfsId:
+    Description: EFS key Id
+    Condition: CondCreateKmsEfsKey
+    Value: !Ref efsKms
+    Export:
+      Name: !Sub efsKeyId-${AWS::Region}
+  
+  keyFsxARN:
+    Description: FSx key ARN
+    Condition: CondCreateKmsFsxKey
+    Value: !GetAtt fsxKms.Arn
+    Export:
+      Name: !Sub fsxKeyArn-${AWS::Region}
+  
+  keyFsxId:
+    Description: FSx key Id
+    Condition: CondCreateKmsFsxKey
+    Value: !Ref fsxKms
+    Export:
+      Name: !Sub fsxKeyId-${AWS::Region}
+
+  keyS3Arn:
+    Description: S3 key ARN
+    Condition: CondCreateKmsS3Key
+    Value: !GetAtt s3Kms.Arn
+    Export:
+      Name: !Sub s3KeyArn-${AWS::Region}
+
+  keyS3Id:
+    Description: S3 key Id
+    Condition: CondCreateKmsS3Key
+    Value: !Ref s3Kms
+    Export:
+      Name: !Sub s3KeyId-${AWS::Region}
+
+  keySsmArn:
+    Description: SSM key ARN
+    Condition: CondCreateKmsSsmKey
+    Value: !GetAtt ssmKms.Arn
+    Export:
+      Name: !Sub ssmKeyArn-${AWS::Region}
+
+  keySsmId:
+    Description: SSM key Id
+    Condition: CondCreateKmsSsmKey
+    Value: !Ref ssmKms
+    Export:
+      Name: !Sub ssmKeyId-${AWS::Region}
+  
+  keyEc:
+    Description: Elasticache key ARN
+    Condition: CondCreateKmsEcKey
+    Value: !GetAtt ecKms.Arn
+    Export:
+      Name: !Sub elasticacheKeyArn-${AWS::Region}
+  
+  keyEcId:
+    Description: Elasticache key Id
+    Condition: CondCreateKmsEcKey
+    Value: !Ref ecKms
+    Export:
+      Name: !Sub elasticacheKeyId-${AWS::Region}
+
+  keySm:
+    Description: Secrets Manager key ARN
+    Condition: CondCreateKmsSMKey
+    Value: !GetAtt smKms.Arn
+    Export:
+      Name: !Sub secretsmanagerKeyArn-${AWS::Region}
+
+  keySmId:
+    Description: Secrets Manager key Id
+    Condition: CondCreateKmsSMKey
+    Value: !Ref smKms
+    Export:
+      Name: !Sub secretsmanagerKeyId-${AWS::Region}
+
+  keyDynamo:
+    Description: DynamoDB key ARN
+    Condition: CondCreateKmsDynamoKey
+    Value: !GetAtt dynamoKms.Arn
+    Export:
+      Name: !Sub dynamoKeyArn-${AWS::Region}
+
+  keyDynamoId:
+    Description: DynamoDB key Id
+    Condition: CondCreateKmsDynamoKey
+    Value: !Ref dynamoKms
+    Export:
+      Name: !Sub dynamoKeyId-${AWS::Region}
